@@ -1,0 +1,707 @@
+"use client";
+
+import * as React from "react";
+import { toast } from "sonner";
+import { initialLeads } from "@/lib/mock-data";
+import { createClient } from "@/lib/supabase/client";
+import {
+  Lead,
+  LeadActivity,
+  LeadInput,
+  LeadNote,
+  LeadStatus,
+  Payment
+} from "@/lib/types";
+
+type StoreContextValue = {
+  leads: Lead[];
+  isLoading: boolean;
+  isSupabaseEnabled: boolean;
+  getLead: (id: string) => Lead | undefined;
+  refreshLeads: () => Promise<void>;
+  createLead: (input: LeadInput) => Promise<Lead | undefined>;
+  updateLead: (id: string, input: LeadInput) => Promise<void>;
+  updateStatus: (id: string, status: LeadStatus, reason?: string) => Promise<void>;
+  softDeleteLead: (id: string) => Promise<void>;
+  addPayment: (leadId: string, amount: number, notes?: string) => Promise<void>;
+  addNote: (leadId: string, body: string) => Promise<void>;
+  updateActivity: (
+    leadId: string,
+    activityId: string,
+    message: string
+  ) => Promise<void>;
+  deleteActivity: (leadId: string, activityId: string) => Promise<void>;
+};
+
+const StoreContext = React.createContext<StoreContextValue | null>(null);
+const storageKey = "lead-management-demo-state";
+
+type PaymentRow = {
+  id: string;
+  lead_id: string;
+  amount: number | string;
+  paid_at: string;
+  notes: string | null;
+};
+
+type ActivityRow = {
+  id: string;
+  lead_id: string;
+  created_at: string;
+  message: string;
+};
+
+type NoteRow = {
+  id: string;
+  lead_id: string;
+  created_at: string;
+  body: string;
+};
+
+type LeadRow = {
+  id: string;
+  customer_name: string | null;
+  phone: string | null;
+  email: string | null;
+  address: string | null;
+  service_type: string | null;
+  description: string | null;
+  estimated_price: number | string | null;
+  status: LeadStatus;
+  cancellation_reason: string | null;
+  created_at: string;
+  updated_at: string;
+  completed_at: string | null;
+  cancelled_at: string | null;
+  deleted_at: string | null;
+  payments?: PaymentRow[] | null;
+  lead_activities?: ActivityRow[] | null;
+  lead_notes?: NoteRow[] | null;
+};
+
+function uid(prefix: string) {
+  return `${prefix}-${crypto.randomUUID()}`;
+}
+
+function addActivity(
+  lead: Lead,
+  message: string,
+  createdAt = new Date().toISOString()
+): LeadActivity {
+  return {
+    id: uid("activity"),
+    leadId: lead.id,
+    createdAt,
+    userName: "Admin",
+    message
+  };
+}
+
+function statusMessage(status: LeadStatus) {
+  return status.replace("_", " ");
+}
+
+function mapPayment(row: PaymentRow): Payment {
+  return {
+    id: row.id,
+    leadId: row.lead_id,
+    amount: Number(row.amount),
+    paidAt: row.paid_at,
+    notes: row.notes ?? undefined
+  };
+}
+
+function mapActivity(row: ActivityRow): LeadActivity {
+  return {
+    id: row.id,
+    leadId: row.lead_id,
+    createdAt: row.created_at,
+    userName: "Admin",
+    message: row.message
+  };
+}
+
+function mapNote(row: NoteRow): LeadNote {
+  return {
+    id: row.id,
+    leadId: row.lead_id,
+    createdAt: row.created_at,
+    body: row.body
+  };
+}
+
+function mapLead(row: LeadRow): Lead {
+  return {
+    id: row.id,
+    customerName: row.customer_name ?? "",
+    phone: row.phone ?? "",
+    email: row.email ?? undefined,
+    address: row.address ?? undefined,
+    serviceType: row.service_type ?? "",
+    description: row.description ?? "",
+    estimatedPrice: Number(row.estimated_price ?? 0),
+    status: row.status,
+    cancellationReason: row.cancellation_reason ?? undefined,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    completedAt: row.completed_at ?? undefined,
+    cancelledAt: row.cancelled_at ?? undefined,
+    deletedAt: row.deleted_at ?? undefined,
+    payments: (row.payments ?? [])
+      .map(mapPayment)
+      .sort((a, b) => +new Date(b.paidAt) - +new Date(a.paidAt)),
+    activities: (row.lead_activities ?? [])
+      .map(mapActivity)
+      .sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt)),
+    notes: (row.lead_notes ?? [])
+      .map(mapNote)
+      .sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt))
+  };
+}
+
+function leadPayload(input: LeadInput, timestamp = new Date().toISOString()) {
+  return {
+    customer_name: input.customerName,
+    phone: input.phone,
+    email: input.email || null,
+    address: input.address || null,
+    service_type: input.serviceType,
+    description: input.description,
+    estimated_price: input.estimatedPrice,
+    status: input.status,
+    cancellation_reason:
+      input.status === "cancelled" ? input.cancellationReason ?? null : null,
+    completed_at: input.status === "completed" ? timestamp : null,
+    cancelled_at: input.status === "cancelled" ? timestamp : null
+  };
+}
+
+export function LeadStoreProvider({ children }: { children: React.ReactNode }) {
+  const supabase = React.useMemo(() => createClient(), []);
+  const isSupabaseEnabled = Boolean(supabase);
+  const [leads, setLeads] = React.useState<Lead[]>([]);
+  const [isLoading, setIsLoading] = React.useState(true);
+  const [isHydrated, setIsHydrated] = React.useState(false);
+
+  const refreshLeads = React.useCallback(async () => {
+    if (!supabase) return;
+
+    setIsLoading(true);
+    const { data, error } = await supabase
+      .from("leads")
+      .select(
+        `
+          *,
+          payments (*),
+          lead_activities (*),
+          lead_notes (*)
+        `
+      )
+      .is("deleted_at", null)
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      toast.error(error.message);
+      setIsLoading(false);
+      return;
+    }
+
+    setLeads(((data ?? []) as LeadRow[]).map(mapLead));
+    setIsLoading(false);
+  }, [supabase]);
+
+  React.useEffect(() => {
+    if (supabase) {
+      void refreshLeads();
+      return;
+    }
+
+    const stored = window.localStorage.getItem(storageKey);
+    if (stored) {
+      setLeads(JSON.parse(stored) as Lead[]);
+    } else {
+      setLeads(initialLeads);
+    }
+    setIsHydrated(true);
+    setIsLoading(false);
+  }, [refreshLeads, supabase]);
+
+  React.useEffect(() => {
+    if (!supabase && isHydrated) {
+      window.localStorage.setItem(storageKey, JSON.stringify(leads));
+    }
+  }, [isHydrated, leads, supabase]);
+
+  const getLead = React.useCallback(
+    (id: string) => leads.find((lead) => lead.id === id && !lead.deletedAt),
+    [leads]
+  );
+
+  const createLead = React.useCallback(async (input: LeadInput) => {
+    const timestamp = new Date().toISOString();
+
+    if (supabase) {
+      const { data, error } = await supabase
+        .from("leads")
+        .insert(leadPayload(input, timestamp))
+        .select()
+        .single();
+
+      if (error) {
+        toast.error(error.message);
+        return undefined;
+      }
+
+      const row = data as LeadRow;
+      const { error: activityError } = await supabase
+        .from("lead_activities")
+        .insert({
+          lead_id: row.id,
+          message: "Lead created",
+          created_at: timestamp
+        });
+
+      if (activityError) {
+        toast.error(activityError.message);
+      }
+
+      await refreshLeads();
+      toast.success("Lead created");
+      return mapLead({ ...row, payments: [], lead_activities: [], lead_notes: [] });
+    }
+
+    const lead: Lead = {
+      id: uid("lead"),
+      ...input,
+      cancellationReason:
+        input.status === "cancelled" ? input.cancellationReason : undefined,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      completedAt: input.status === "completed" ? timestamp : undefined,
+      cancelledAt: input.status === "cancelled" ? timestamp : undefined,
+      payments: [],
+      activities: [],
+      notes: []
+    };
+    lead.activities = [addActivity(lead, "Lead created", timestamp)];
+
+    setLeads((current) => [lead, ...current]);
+    toast.success("Lead created");
+    return lead;
+  }, [refreshLeads, supabase]);
+
+  const updateLead = React.useCallback(async (id: string, input: LeadInput) => {
+    const timestamp = new Date().toISOString();
+
+    if (supabase) {
+      const previous = leads.find((lead) => lead.id === id);
+      const payload = leadPayload(input, timestamp);
+
+      const { error } = await supabase.from("leads").update(payload).eq("id", id);
+      if (error) {
+        toast.error(error.message);
+        return;
+      }
+
+      const activityMessage =
+        previous && previous.status !== input.status
+          ? `Status changed to ${statusMessage(input.status)}`
+          : "Lead details updated";
+
+      const { error: activityError } = await supabase
+        .from("lead_activities")
+        .insert({
+          lead_id: id,
+          message: activityMessage,
+          created_at: timestamp
+        });
+
+      if (activityError) {
+        toast.error(activityError.message);
+      }
+
+      await refreshLeads();
+      toast.success("Lead updated");
+      return;
+    }
+
+    setLeads((current) =>
+      current.map((lead) => {
+        if (lead.id !== id) return lead;
+
+        const statusChanged = lead.status !== input.status;
+        const updated: Lead = {
+          ...lead,
+          ...input,
+          cancellationReason:
+            input.status === "cancelled" ? input.cancellationReason : undefined,
+          updatedAt: timestamp,
+          completedAt:
+            input.status === "completed"
+              ? lead.completedAt ?? timestamp
+              : undefined,
+          cancelledAt:
+            input.status === "cancelled"
+              ? lead.cancelledAt ?? timestamp
+              : undefined
+        };
+
+        return {
+          ...updated,
+          activities: statusChanged
+            ? [
+                addActivity(updated, `Status changed to ${input.status}`, timestamp),
+                ...lead.activities
+              ]
+            : [
+                addActivity(updated, "Lead details updated", timestamp),
+                ...lead.activities
+              ]
+        };
+      })
+    );
+    toast.success("Lead updated");
+  }, [leads, refreshLeads, supabase]);
+
+  const updateStatus = React.useCallback(
+    async (id: string, status: LeadStatus, reason?: string) => {
+      const timestamp = new Date().toISOString();
+
+      if (supabase) {
+        const { error } = await supabase
+          .from("leads")
+          .update({
+            status,
+            cancellation_reason: status === "cancelled" ? reason ?? null : null,
+            completed_at: status === "completed" ? timestamp : null,
+            cancelled_at: status === "cancelled" ? timestamp : null
+          })
+          .eq("id", id);
+
+        if (error) {
+          toast.error(error.message);
+          return;
+        }
+
+        const { error: activityError } = await supabase
+          .from("lead_activities")
+          .insert({
+            lead_id: id,
+            message: `Status changed to ${statusMessage(status)}`,
+            created_at: timestamp
+          });
+
+        if (activityError) {
+          toast.error(activityError.message);
+        }
+
+        await refreshLeads();
+        toast.success("Status updated");
+        return;
+      }
+
+      setLeads((current) =>
+        current.map((lead) => {
+          if (lead.id !== id) return lead;
+
+          const updated: Lead = {
+            ...lead,
+            status,
+            cancellationReason: status === "cancelled" ? reason : undefined,
+            updatedAt: timestamp,
+            completedAt:
+              status === "completed" ? lead.completedAt ?? timestamp : undefined,
+            cancelledAt:
+              status === "cancelled" ? lead.cancelledAt ?? timestamp : undefined
+          };
+
+          return {
+            ...updated,
+            activities: [
+              addActivity(updated, `Status changed to ${status}`, timestamp),
+              ...lead.activities
+            ]
+          };
+        })
+      );
+      toast.success("Status updated");
+    },
+    [refreshLeads, supabase]
+  );
+
+  const softDeleteLead = React.useCallback(async (id: string) => {
+    const timestamp = new Date().toISOString();
+
+    if (supabase) {
+      const { error } = await supabase
+        .from("leads")
+        .update({ deleted_at: timestamp })
+        .eq("id", id);
+
+      if (error) {
+        toast.error(error.message);
+        return;
+      }
+
+      await supabase.from("lead_activities").insert({
+        lead_id: id,
+        message: "Lead soft deleted",
+        created_at: timestamp
+      });
+
+      await refreshLeads();
+      toast.success("Lead deleted");
+      return;
+    }
+
+    setLeads((current) =>
+      current.map((lead) =>
+        lead.id === id
+          ? {
+              ...lead,
+              deletedAt: timestamp,
+              updatedAt: timestamp,
+              activities: [
+                addActivity(lead, "Lead soft deleted", timestamp),
+                ...lead.activities
+              ]
+            }
+          : lead
+      )
+    );
+    toast.success("Lead deleted");
+  }, [refreshLeads, supabase]);
+
+  const addPayment = React.useCallback(
+    async (leadId: string, amount: number, notes?: string) => {
+      const timestamp = new Date().toISOString();
+
+      if (supabase) {
+        const { error } = await supabase.from("payments").insert({
+          lead_id: leadId,
+          amount,
+          notes: notes ?? null,
+          paid_at: timestamp
+        });
+
+        if (error) {
+          toast.error(error.message);
+          return;
+        }
+
+        await supabase.from("lead_activities").insert({
+          lead_id: leadId,
+          message: `Payment recorded: INR ${amount}`,
+          created_at: timestamp
+        });
+
+        await supabase
+          .from("leads")
+          .update({ updated_at: timestamp })
+          .eq("id", leadId);
+
+        await refreshLeads();
+        toast.success("Payment recorded");
+        return;
+      }
+
+      setLeads((current) =>
+        current.map((lead) => {
+          if (lead.id !== leadId) return lead;
+          const payment: Payment = {
+            id: uid("payment"),
+            leadId,
+            amount,
+            paidAt: timestamp,
+            notes
+          };
+
+          return {
+            ...lead,
+            payments: [payment, ...lead.payments],
+            updatedAt: timestamp,
+            activities: [
+              addActivity(lead, `Payment recorded: INR ${amount}`, timestamp),
+              ...lead.activities
+            ]
+          };
+        })
+      );
+      toast.success("Payment recorded");
+    },
+    [refreshLeads, supabase]
+  );
+
+  const addNote = React.useCallback(async (leadId: string, body: string) => {
+    const timestamp = new Date().toISOString();
+
+    if (supabase) {
+      const { error } = await supabase.from("lead_notes").insert({
+        lead_id: leadId,
+        body,
+        created_at: timestamp
+      });
+
+      if (error) {
+        toast.error(error.message);
+        return;
+      }
+
+      await supabase.from("lead_activities").insert({
+        lead_id: leadId,
+        message: "Manual note added",
+        created_at: timestamp
+      });
+
+      await supabase
+        .from("leads")
+        .update({ updated_at: timestamp })
+        .eq("id", leadId);
+
+      await refreshLeads();
+      toast.success("Note added");
+      return;
+    }
+
+    setLeads((current) =>
+      current.map((lead) => {
+        if (lead.id !== leadId) return lead;
+        const note: LeadNote = {
+          id: uid("note"),
+          leadId,
+          body,
+          createdAt: timestamp
+        };
+
+        return {
+          ...lead,
+          notes: [note, ...lead.notes],
+          updatedAt: timestamp,
+          activities: [addActivity(lead, "Manual note added", timestamp), ...lead.activities]
+        };
+      })
+    );
+    toast.success("Note added");
+  }, [refreshLeads, supabase]);
+
+  const updateActivity = React.useCallback(
+    async (leadId: string, activityId: string, message: string) => {
+      const nextMessage = message.trim();
+      if (!nextMessage) {
+        toast.error("Activity message cannot be empty");
+        return;
+      }
+
+      if (supabase) {
+        const { error } = await supabase
+          .from("lead_activities")
+          .update({ message: nextMessage })
+          .eq("id", activityId);
+
+        if (error) {
+          toast.error(error.message);
+          return;
+        }
+
+        await refreshLeads();
+        toast.success("Activity updated");
+        return;
+      }
+
+      setLeads((current) =>
+        current.map((lead) =>
+          lead.id === leadId
+            ? {
+                ...lead,
+                activities: lead.activities.map((activity) =>
+                  activity.id === activityId
+                    ? { ...activity, message: nextMessage }
+                    : activity
+                )
+              }
+            : lead
+        )
+      );
+      toast.success("Activity updated");
+    },
+    [refreshLeads, supabase]
+  );
+
+  const deleteActivity = React.useCallback(
+    async (leadId: string, activityId: string) => {
+      if (supabase) {
+        const { error } = await supabase
+          .from("lead_activities")
+          .delete()
+          .eq("id", activityId);
+
+        if (error) {
+          toast.error(error.message);
+          return;
+        }
+
+        await refreshLeads();
+        toast.success("Activity deleted");
+        return;
+      }
+
+      setLeads((current) =>
+        current.map((lead) =>
+          lead.id === leadId
+            ? {
+                ...lead,
+                activities: lead.activities.filter(
+                  (activity) => activity.id !== activityId
+                )
+              }
+            : lead
+        )
+      );
+      toast.success("Activity deleted");
+    },
+    [refreshLeads, supabase]
+  );
+
+  const value = React.useMemo<StoreContextValue>(
+    () => ({
+      leads,
+      isLoading,
+      isSupabaseEnabled,
+      getLead,
+      refreshLeads,
+      createLead,
+      updateLead,
+      updateStatus,
+      softDeleteLead,
+      addPayment,
+      addNote,
+      updateActivity,
+      deleteActivity
+    }),
+    [
+      leads,
+      isLoading,
+      isSupabaseEnabled,
+      getLead,
+      refreshLeads,
+      createLead,
+      updateLead,
+      updateStatus,
+      softDeleteLead,
+      addPayment,
+      addNote,
+      updateActivity,
+      deleteActivity
+    ]
+  );
+
+  return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;
+}
+
+export function useLeadStore() {
+  const value = React.useContext(StoreContext);
+  if (!value) {
+    throw new Error("useLeadStore must be used inside LeadStoreProvider");
+  }
+  return value;
+}
