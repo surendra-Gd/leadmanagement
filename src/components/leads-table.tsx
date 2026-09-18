@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import { Link } from "react-router-dom";
 import { ArrowUpRight, Pencil, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/status-badge";
@@ -62,7 +62,7 @@ export function LeadsTable({
                 <td className="px-4 py-4">
                   <div className="flex justify-end gap-1">
                     <Button variant="ghost" size="icon" asChild aria-label="View lead">
-                      <Link href={`/leads/${lead.id}`}>
+                      <Link to={`/leads/${lead.id}`}>
                         <ArrowUpRight className="h-4 w-4" aria-hidden />
                       </Link>
                     </Button>
@@ -108,7 +108,7 @@ export function LeadsTable({
             </div>
             <div className="mt-4 flex gap-2">
               <Button variant="outline" size="sm" className="flex-1" asChild>
-                <Link href={`/leads/${lead.id}`}>Open</Link>
+                <Link to={`/leads/${lead.id}`}>Open</Link>
               </Button>
               <Button variant="outline" size="sm" onClick={() => onEdit(lead)}>
                 <Pencil className="h-4 w-4" aria-hidden />

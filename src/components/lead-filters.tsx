@@ -32,8 +32,8 @@ export function LeadFilters({
   }
 
   return (
-    <div className="grid gap-3 rounded-lg border border-border bg-card p-4 sm:grid-cols-2 xl:grid-cols-6">
-      <div className="relative sm:col-span-2 xl:col-span-2">
+    <div className="grid grid-cols-2 gap-3 rounded-lg border border-border bg-card p-4 xl:grid-cols-6">
+      <div className="relative col-span-2 xl:col-span-2">
         <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         <Input
           className="pl-9"
@@ -43,6 +43,7 @@ export function LeadFilters({
         />
       </div>
       <Select
+        className="min-h-11"
         disabled={statusLocked}
         value={value.status}
         onChange={(event) =>
@@ -57,6 +58,7 @@ export function LeadFilters({
         ))}
       </Select>
       <Select
+        className="min-h-11"
         value={value.sort}
         onChange={(event) => setValue("sort", event.target.value as SortOption)}
       >
@@ -66,23 +68,27 @@ export function LeadFilters({
         <option value="lowest">Lowest Value</option>
       </Select>
       <Input
+        className="min-h-11"
         type="number"
         placeholder="Min amount"
         value={value.minAmount}
         onChange={(event) => setValue("minAmount", event.target.value)}
       />
       <Input
+        className="min-h-11"
         type="number"
         placeholder="Max amount"
         value={value.maxAmount}
         onChange={(event) => setValue("maxAmount", event.target.value)}
       />
       <Input
+        className="min-h-11"
         type="date"
         value={value.startDate}
         onChange={(event) => setValue("startDate", event.target.value)}
       />
       <Input
+        className="min-h-11"
         type="date"
         value={value.endDate}
         onChange={(event) => setValue("endDate", event.target.value)}

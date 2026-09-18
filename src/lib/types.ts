@@ -1,3 +1,6 @@
+export type RecordType = "lead" | "prospect";
+export type ProspectStatus = "warm" | "cold" | "not_interested";
+
 export type LeadStatus =
   | "not_confirmed"
   | "confirmed"
@@ -49,6 +52,8 @@ export type Lead = {
   payments: Payment[];
   activities: LeadActivity[];
   notes: LeadNote[];
+  recordType: RecordType;
+  prospectStatus?: ProspectStatus;
 };
 
 export type LeadInput = {
@@ -61,6 +66,8 @@ export type LeadInput = {
   estimatedPrice: number;
   status: LeadStatus;
   cancellationReason?: string;
+  recordType?: RecordType;
+  prospectStatus?: ProspectStatus;
 };
 
 export const leadStatusLabels: Record<LeadStatus, string> = {

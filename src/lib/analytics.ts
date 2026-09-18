@@ -10,86 +10,175 @@ export function getPendingAmount(lead: Lead) {
 }
 
 export function getDashboardStats(leads: Lead[]) {
-  const activeLeads = leads.filter((lead) => !lead.deletedAt);
-  const byStatus = activeLeads.reduce<Record<LeadStatus, number>>(
-    (acc, lead) => {
-      acc[lead.status] += 1;
-      return acc;
-    },
-    {
-      not_confirmed: 0,
-      confirmed: 0,
-      in_progress: 0,
-      completed: 0,
-      cancelled: 0
-    }
+  // Only real leads count toward pipeline/financial stats
+  const activeLeads = leads.filter(
+      (lead) => !lead.deletedAt && lead.recordType !== "prospect"
+  );
+  const activeProspects = leads.filter(
+      (lead) => !lead.deletedAt && lead.recordType === "prospect"
   );
 
-  const totalProjectValue = activeLeads.reduce(
-    (sum, lead) => sum + lead.estimatedPrice,
-    0
+  const byStatus = activeLeads.reduce<Record<LeadStatus, number>>(
+      (acc, lead) => {
+        acc[lead.status] += 1;
+        return acc;
+      },
+      {
+        not_confirmed: 0,
+        confirmed: 0,
+        in_progress: 0,
+        completed: 0,
+        cancelled: 0
+      }
   );
-  const totalReceived = activeLeads.reduce(
-    (sum, lead) => sum + getPaidAmount(lead),
-    0
+
+  const warmLeads = activeProspects.filter((p) => p.prospectStatus === "warm").length;
+  const coldLeads = activeProspects.filter((p) => p.prospectStatus === "cold").length;
+  const notInterestedLeads = activeProspects.filter(
+      (p) => p.prospectStatus === "not_interested"
+  ).length;
+
+  const relevantStatuses = new Set<LeadStatus>([
+    "confirmed",
+    "in_progress",
+    "completed"
+  ]);
+  const financialLeads = activeLeads.filter((lead) =>
+      relevantStatuses.has(lead.status)
   );
-  const totalPending = activeLeads.reduce(
-    (sum, lead) => sum + getPendingAmount(lead),
-    0
+
+  const totalProjectValue = financialLeads.reduce(
+      (sum, lead) => sum + lead.estimatedPrice,
+      0
   );
+  const totalReceived = financialLeads.reduce(
+      (sum, lead) => sum + getPaidAmount(lead),
+      0
+  );
+  const totalPending = financialLeads.reduce(
+      (sum, lead) => sum + getPendingAmount(lead),
+      0
+  );
+
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const endOfToday = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate(),
+      23,
+      59,
+      59,
+      999
+  );
+
+  const todayEarnings = financialLeads.reduce((sum, lead) => {
+    return (
+        sum +
+        lead.payments.reduce((paymentSum, payment) => {
+          const paidAt = new Date(payment.paidAt);
+          if (paidAt >= startOfToday && paidAt <= endOfToday) {
+            return paymentSum + payment.amount;
+          }
+          return paymentSum;
+        }, 0)
+    );
+  }, 0);
+
   const completed = byStatus.completed;
   const qualified = activeLeads.length - byStatus.cancelled;
 
   return {
     totalLeads: activeLeads.length,
+    totalProspects: activeProspects.length,
+    warmLeads,
+    coldLeads,
+    notInterestedLeads,
     byStatus,
     totalProjectValue,
     totalReceived,
     totalPending,
+    todayEarnings,
     averageProjectValue: activeLeads.length
-      ? Math.round(totalProjectValue / activeLeads.length)
-      : 0,
+        ? Math.round(totalProjectValue / activeLeads.length)
+        : 0,
     conversionRate: qualified ? Math.round((completed / qualified) * 100) : 0
   };
 }
 
+export function getCurrentMonthSeries(leads: Lead[]) {
+  const today = new Date();
+  const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+  const monthEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+  const totalDays = monthEnd.getDate();
+
+  const series = Array.from({ length: totalDays }, (_, index) => {
+    const date = new Date(today.getFullYear(), today.getMonth(), index + 1);
+    return {
+      key: format(date, "yyyy-MM-dd"),
+      label: format(date, "d"),
+      revenue: 0
+    };
+  });
+
+  leads
+      .filter((lead) => !lead.deletedAt && lead.recordType !== "prospect")
+      .forEach((lead) => {
+        if (!["confirmed", "in_progress", "completed"].includes(lead.status)) {
+          return;
+        }
+
+        lead.payments.forEach((payment) => {
+          const paidAt = new Date(payment.paidAt);
+          if (paidAt >= monthStart && paidAt <= monthEnd) {
+            const dayIndex = paidAt.getDate() - 1;
+            if (series[dayIndex]) {
+              series[dayIndex].revenue += payment.amount;
+            }
+          }
+        });
+      });
+
+  return series;
+}
+
 export function getMonthlySeries(leads: Lead[]) {
   const months = Array.from({ length: 6 })
-    .map((_, index) => startOfMonth(subMonths(new Date(), 5 - index)))
-    .map((date) => ({
-      key: format(date, "yyyy-MM"),
-      month: format(date, "MMM"),
-      revenue: 0,
-      completed: 0,
-      leads: 0
-    }));
+      .map((_, index) => startOfMonth(subMonths(new Date(), 5 - index)))
+      .map((date) => ({
+        key: format(date, "yyyy-MM"),
+        month: format(date, "MMM"),
+        revenue: 0,
+        completed: 0,
+        leads: 0
+      }));
 
   const lookup = new Map(months.map((month) => [month.key, month]));
 
   leads
-    .filter((lead) => !lead.deletedAt)
-    .forEach((lead) => {
-      const leadMonth = lookup.get(format(new Date(lead.createdAt), "yyyy-MM"));
-      if (leadMonth) {
-        leadMonth.leads += 1;
-      }
+      .filter((lead) => !lead.deletedAt && lead.recordType !== "prospect")
+      .forEach((lead) => {
+        const leadMonth = lookup.get(format(new Date(lead.createdAt), "yyyy-MM"));
+        if (leadMonth) {
+          leadMonth.leads += 1;
+        }
 
-      lead.payments.forEach((payment) => {
-        const month = lookup.get(format(new Date(payment.paidAt), "yyyy-MM"));
-        if (month) {
-          month.revenue += payment.amount;
+        lead.payments.forEach((payment) => {
+          const month = lookup.get(format(new Date(payment.paidAt), "yyyy-MM"));
+          if (month) {
+            month.revenue += payment.amount;
+          }
+        });
+
+        if (lead.completedAt) {
+          const completedMonth = lookup.get(
+              format(new Date(lead.completedAt), "yyyy-MM")
+          );
+          if (completedMonth) {
+            completedMonth.completed += 1;
+          }
         }
       });
-
-      if (lead.completedAt) {
-        const completedMonth = lookup.get(
-          format(new Date(lead.completedAt), "yyyy-MM")
-        );
-        if (completedMonth) {
-          completedMonth.completed += 1;
-        }
-      }
-    });
 
   return months;
 }

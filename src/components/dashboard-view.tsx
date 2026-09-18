@@ -16,22 +16,27 @@ import {
   CircleDollarSign,
   Clock3,
   FileCheck2,
-  FileX2,
   TrendingUp,
-  Users
+  Users,
+  Flame
 } from "lucide-react";
 import type { ElementType } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { PageHeader } from "@/components/page-header";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useLeadStore } from "@/lib/store";
-import { getDashboardStats, getMonthlySeries } from "@/lib/analytics";
+import {
+  getCurrentMonthSeries,
+  getDashboardStats,
+  getMonthlySeries
+} from "@/lib/analytics";
 import { formatCurrency } from "@/lib/utils";
 
 export function DashboardView() {
   const { leads, isLoading } = useLeadStore();
   const stats = getDashboardStats(leads);
   const monthly = getMonthlySeries(leads);
+  const currentMonth = getCurrentMonthSeries(leads);
 
   const cards = [
     {
@@ -47,10 +52,10 @@ export function DashboardView() {
       tone: "text-emerald-600"
     },
     {
-      label: "Not Confirmed",
-      value: stats.byStatus.not_confirmed,
-      icon: Clock3,
-      tone: "text-slate-600 dark:text-slate-300"
+      label: "Warm Leads",
+      value: stats.warmLeads,
+      icon: Flame,
+      tone: "text-orange-600"
     },
     {
       label: "In Progress",
@@ -67,7 +72,7 @@ export function DashboardView() {
     {
       label: "Cancelled",
       value: stats.byStatus.cancelled,
-      icon: FileX2,
+      icon: CheckCircle2,
       tone: "text-rose-600"
     }
   ];
@@ -106,7 +111,7 @@ export function DashboardView() {
         </div>
       )}
 
-      <div className="mt-4 grid gap-4 lg:grid-cols-3">
+      <div className="mt-4 grid gap-4 lg:grid-cols-4">
         <FinancialCard
           label="Total Project Value"
           value={formatCurrency(stats.totalProjectValue)}
@@ -116,6 +121,11 @@ export function DashboardView() {
           label="Total Received"
           value={formatCurrency(stats.totalReceived)}
           icon={CheckCircle2}
+        />
+        <FinancialCard
+          label="Today Earnings"
+          value={formatCurrency(stats.todayEarnings)}
+          icon={TrendingUp}
         />
         <FinancialCard
           label="Total Pending"
@@ -177,24 +187,49 @@ export function DashboardView() {
         </Card>
       </div>
 
-      <Card className="mt-4">
-        <CardHeader>
-          <CardTitle>Monthly Completed Projects</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="h-72">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={monthly}>
-                <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-                <XAxis dataKey="month" tickLine={false} axisLine={false} />
-                <YAxis tickLine={false} axisLine={false} allowDecimals={false} />
-                <Tooltip contentStyle={{ borderRadius: 8 }} />
-                <Bar dataKey="completed" fill="#14b8a6" radius={[6, 6, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </CardContent>
-      </Card>
+      <div className="mt-4 grid gap-4 xl:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <CardTitle>Current Month Revenue</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="h-72">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={currentMonth}>
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
+                  <XAxis dataKey="label" tickLine={false} axisLine={false} />
+                  <YAxis tickLine={false} axisLine={false} />
+                  <Tooltip
+                    formatter={(value) => formatCurrency(Number(value))}
+                    contentStyle={{ borderRadius: 8 }}
+                  />
+                  <Bar dataKey="revenue" fill="#0ea5e9" radius={[6, 6, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Monthly Completed Projects</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="h-72">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={monthly}>
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
+                  <XAxis dataKey="month" tickLine={false} axisLine={false} />
+                  <YAxis tickLine={false} axisLine={false} allowDecimals={false} />
+                  <Tooltip contentStyle={{ borderRadius: 8 }} />
+                  <Bar dataKey="completed" fill="#14b8a6" radius={[6, 6, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
     </>
   );
 }

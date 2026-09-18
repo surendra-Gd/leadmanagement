@@ -1,7 +1,6 @@
 "use client";
 
-import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   BarChart3,
   CheckCircle2,
@@ -12,6 +11,7 @@ import {
   Search,
   Settings,
   Sun,
+  UserPlus,
   Users,
   XCircle
 } from "lucide-react";
@@ -27,17 +27,59 @@ import { createClient } from "@/lib/supabase/client";
 const navigation = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/leads", label: "Leads", icon: Users },
+  { href: "/prospects", label: "Prospects", icon: UserPlus },
   { href: "/completed", label: "Completed", icon: CheckCircle2 },
   { href: "/cancelled", label: "Cancelled", icon: XCircle },
   { href: "/settings", label: "Settings", icon: Settings }
 ];
 
 export function AppShell({ children }: { children: React.ReactNode }) {
-  const pathname = usePathname();
-  const router = useRouter();
+  const location = useLocation();
+  const pathname = location.pathname;
+  const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = React.useState(false);
   const [theme, setTheme] = React.useState<"light" | "dark">("light");
   const [isNavigating, setIsNavigating] = React.useState(false);
+
+  React.useEffect(() => {
+    const supabase = createClient();
+    if (!supabase) {
+      if (pathname !== "/login") {
+        navigate("/login", { replace: true });
+      }
+      return;
+    }
+
+    let active = true;
+
+    supabase.auth.getSession().then(({ data }) => {
+      if (!active) return;
+      const isAuthRoute = pathname === "/login";
+      if (!data.session && !isAuthRoute) {
+        navigate("/login", { replace: true });
+      }
+      if (data.session && isAuthRoute) {
+        navigate("/dashboard", { replace: true });
+      }
+    });
+
+    const {
+      data: { subscription }
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!active) return;
+      if (!session && pathname !== "/login") {
+        navigate("/login", { replace: true });
+      }
+      if (session && pathname === "/login") {
+        navigate("/dashboard", { replace: true });
+      }
+    });
+
+    return () => {
+      active = false;
+      subscription.unsubscribe();
+    };
+  }, [pathname, navigate]);
 
   React.useEffect(() => {
     const stored = window.localStorage.getItem("theme") as "light" | "dark" | null;
@@ -97,8 +139,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     if (supabase) {
       await supabase.auth.signOut();
     }
-    router.push("/login");
-    router.refresh();
+    navigate("/login");
   }
 
   const sidebar = (
@@ -121,7 +162,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           return (
             <Link
               key={item.href}
-              href={item.href}
+              to={item.href}
               className={cn(
                 "flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground",
                 active && "bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground"
@@ -234,7 +275,7 @@ function BottomNavigation({ pathname }: { pathname: string }) {
           return (
             <Link
               key={item.href}
-              href={item.href}
+              to={item.href}
               className={cn(
                 "flex min-h-14 flex-col items-center justify-center gap-1 rounded-md px-1 text-[11px] font-medium text-muted-foreground transition-colors",
                 active && "bg-primary text-primary-foreground"

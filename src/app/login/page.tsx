@@ -1,6 +1,6 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { useNavigate } from "react-router-dom";
 import * as React from "react";
 import { BarChart3, LockKeyhole } from "lucide-react";
 import { toast, Toaster } from "sonner";
@@ -10,11 +10,25 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { createClient } from "@/lib/supabase/client";
 
-export default function LoginPage() {
-  const router = useRouter();
+export function LoginPage() {
+  const navigate = useNavigate();
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
   const [loading, setLoading] = React.useState(false);
+
+  React.useEffect(() => {
+    const supabase = createClient();
+    if (!supabase) {
+      navigate("/dashboard", { replace: true });
+      return;
+    }
+
+    supabase.auth.getSession().then(({ data }) => {
+      if (data.session) {
+        navigate("/dashboard", { replace: true });
+      }
+    });
+  }, [navigate]);
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -23,7 +37,7 @@ export default function LoginPage() {
 
     if (!supabase) {
       toast.success("Demo session started");
-      router.push("/dashboard");
+      navigate("/dashboard");
       return;
     }
 
@@ -38,8 +52,7 @@ export default function LoginPage() {
       return;
     }
 
-    router.push("/dashboard");
-    router.refresh();
+    navigate("/dashboard");
   }
 
   return (

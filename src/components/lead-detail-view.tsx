@@ -1,7 +1,6 @@
 "use client";
 
-import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { Link, useNavigate } from "react-router-dom";
 import * as React from "react";
 import {
   ArrowLeft,
@@ -27,7 +26,7 @@ import { LeadStatus, leadStatusLabels, leadStatuses } from "@/lib/types";
 import { formatCurrency, formatDate, formatDateTime } from "@/lib/utils";
 
 export function LeadDetailView({ id }: { id: string }) {
-  const router = useRouter();
+  const navigate = useNavigate();
   const {
     getLead,
     updateLead,
@@ -78,7 +77,7 @@ export function LeadDetailView({ id }: { id: string }) {
           It may have been deleted or moved.
         </p>
         <Button className="mt-4" asChild>
-          <Link href="/leads">Back to Leads</Link>
+          <Link to="/leads">Back to Leads</Link>
         </Button>
       </div>
     );
@@ -92,7 +91,7 @@ export function LeadDetailView({ id }: { id: string }) {
     const ok = window.confirm(`Delete lead for ${lead.customerName}?`);
     if (ok) {
       softDeleteLead(lead.id);
-      router.push("/leads");
+      navigate("/leads");
     }
   }
 
@@ -139,7 +138,7 @@ export function LeadDetailView({ id }: { id: string }) {
       <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <Button variant="ghost" size="sm" asChild>
-            <Link href="/leads">
+            <Link to="/leads">
               <ArrowLeft className="h-4 w-4" aria-hidden />
               Back
             </Link>
@@ -201,6 +200,25 @@ export function LeadDetailView({ id }: { id: string }) {
             </CardContent>
           </Card>
 
+          <Card>
+            <CardHeader>
+              <CardTitle>Notes</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {lead.notes.map((item) => (
+                  <div key={item.id} className="rounded-md border border-border p-3 text-sm">
+                    <p className="leading-6">{item.body}</p>
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      {formatDateTime(item.createdAt)}
+                    </p>
+                  </div>
+              ))}
+              {lead.notes.length === 0 && (
+                  <p className="text-sm text-muted-foreground">No notes yet.</p>
+              )}
+            </CardContent>
+          </Card>
+          
           <Card>
             <CardHeader>
               <CardTitle>Activity Timeline</CardTitle>
@@ -377,16 +395,6 @@ export function LeadDetailView({ id }: { id: string }) {
                   Add Note
                 </Button>
               </form>
-              <div className="space-y-2">
-                {lead.notes.map((item) => (
-                  <div key={item.id} className="rounded-md border border-border p-3 text-sm">
-                    <p>{item.body}</p>
-                    <p className="mt-2 text-xs text-muted-foreground">
-                      {formatDateTime(item.createdAt)}
-                    </p>
-                  </div>
-                ))}
-              </div>
             </CardContent>
           </Card>
         </div>

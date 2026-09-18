@@ -61,6 +61,7 @@ export function LeadsView({
 
     return leads
       .filter((lead) => !lead.deletedAt)
+        .filter((lead) => lead.recordType !== "prospect")
       .filter((lead) => filters.status === "all" || lead.status === filters.status)
       .filter((lead) => {
         if (!search) return true;

@@ -1,3 +1,5 @@
+"use client";
+
 import { LeadsView } from "@/components/leads-view";
 
 export default function CompletedPage() {
