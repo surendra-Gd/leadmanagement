@@ -133,6 +133,7 @@ export function ProspectsView() {
                             <th className="px-4 py-2 font-medium">Service</th>
                             <th className="px-4 py-2 font-medium">Est. Price</th>
                             <th className="px-4 py-2 font-medium">Status</th>
+                            <th className="px-4 py-2 font-medium">Last Note</th>
                             <th className="px-4 py-2 font-medium text-right">Actions</th>
                         </tr>
                         </thead>
@@ -162,6 +163,15 @@ export function ProspectsView() {
                                         <option value="cold">Cold Lead</option>
                                         <option value="not_interested">Not Interested</option>
                                     </select>
+                                </td>
+                                <td className="px-4 py-2 max-w-[200px]">
+                                    {prospect.notes && prospect.notes.length > 0 ? (
+                                        <span className="line-clamp-2 text-xs" title={prospect.notes[0].body}>
+                                            {prospect.notes[0].body}
+                                        </span>
+                                    ) : (
+                                        <span className="text-xs text-muted-foreground">-</span>
+                                    )}
                                 </td>
                                 <td className="px-4 py-2">
                                     <div className="flex justify-end gap-1">

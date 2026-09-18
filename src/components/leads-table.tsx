@@ -41,6 +41,7 @@ export function LeadsTable({
               <th className="px-4 py-3 font-semibold">Paid</th>
               <th className="px-4 py-3 font-semibold">Pending</th>
               <th className="px-4 py-3 font-semibold">Created</th>
+              <th className="px-4 py-3 font-semibold">Last Note</th>
               <th className="px-4 py-3 text-right font-semibold">Actions</th>
             </tr>
           </thead>
@@ -59,6 +60,15 @@ export function LeadsTable({
                 <td className="px-4 py-4">{formatCurrency(getPaidAmount(lead))}</td>
                 <td className="px-4 py-4">{formatCurrency(getPendingAmount(lead))}</td>
                 <td className="px-4 py-4">{formatDate(lead.createdAt)}</td>
+                <td className="px-4 py-4 max-w-[200px]">
+                  {lead.notes && lead.notes.length > 0 ? (
+                    <span className="line-clamp-2 text-xs" title={lead.notes[0].body}>
+                      {lead.notes[0].body}
+                    </span>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">-</span>
+                  )}
+                </td>
                 <td className="px-4 py-4">
                   <div className="flex justify-end gap-1">
                     <Button variant="ghost" size="icon" asChild aria-label="View lead">
@@ -105,6 +115,7 @@ export function LeadsTable({
               <Metric label="Pending" value={formatCurrency(getPendingAmount(lead))} />
               <Metric label="Phone" value={lead.phone} />
               <Metric label="Created" value={formatDate(lead.createdAt)} />
+              <Metric label="Last Note" value={lead.notes && lead.notes.length > 0 ? lead.notes[0].body : "-"} />
             </div>
             <div className="mt-4 flex gap-2">
               <Button variant="outline" size="sm" className="flex-1" asChild>
