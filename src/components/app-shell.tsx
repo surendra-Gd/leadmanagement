@@ -292,7 +292,7 @@ function BottomNavigation({ pathname }: { pathname: string }) {
 }
 
 function ConnectionCard() {
-  const { isSupabaseEnabled, isLoading, leads } = useLeadStore();
+  const { isSupabaseEnabled, isLoading, leads, lastApiError } = useLeadStore();
 
   return (
     <div className="mt-auto rounded-lg border border-border bg-background p-4">
@@ -300,15 +300,23 @@ function ConnectionCard() {
         <p className="text-sm font-medium">
           {isSupabaseEnabled ? "Supabase connected" : "Demo mode"}
         </p>
-        <Badge variant={isSupabaseEnabled ? "success" : "warning"}>
-          {isSupabaseEnabled ? "Live" : "Local"}
+        <Badge variant={isSupabaseEnabled ? (lastApiError ? "warning" : "success") : "secondary"}>
+          {isSupabaseEnabled ? (lastApiError ? "API Warning" : "Live") : "Local"}
         </Badge>
       </div>
       <p className="mt-2 text-xs leading-5 text-muted-foreground">
         {isSupabaseEnabled
-          ? `${isLoading ? "Loading" : leads.length} leads loaded from database.`
-          : "Add environment keys to enable secure persisted auth."}
+          ? lastApiError
+            ? "API warning detected. Visit Settings to review details."
+            : `${isLoading ? "Loading..." : `${leads.length} records loaded from Supabase.`}`
+          : "Using local browser data. Network APIs are not connected."}
       </p>
+      <Link
+        to="/settings"
+        className="mt-2.5 inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+      >
+        <span>{isSupabaseEnabled ? "View Connection & Diagnostics →" : "Connect Supabase API →"}</span>
+      </Link>
     </div>
   );
 }

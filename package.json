@@ -6,7 +6,7 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "start": "vite preview --host 0.0.0.0 --port 3000",
-    "lint": "eslint .",
+    "lint": "eslint src --ext .ts,.tsx --ignore-pattern node_modules",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -28,6 +28,8 @@
     "@types/node": "20.14.10",
     "@types/react": "18.3.3",
     "@types/react-dom": "18.3.0",
+    "@typescript-eslint/eslint-plugin": "^8.70.0",
+    "@typescript-eslint/parser": "^8.70.0",
     "@vitejs/plugin-react": "^4.3.2",
     "autoprefixer": "10.4.19",
     "eslint": "8.57.0",

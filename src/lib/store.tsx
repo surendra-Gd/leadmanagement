@@ -3,7 +3,13 @@
 import * as React from "react";
 import { toast } from "sonner";
 import { initialLeads } from "@/lib/mock-data";
-import { createClient } from "@/lib/supabase/client";
+import {
+  createClient,
+  getSupabaseConfig,
+  saveSupabaseConfig,
+  clearSupabaseConfig,
+  type SupabaseConfig
+} from "@/lib/supabase";
 import {
   Lead,
   LeadActivity,
@@ -19,8 +25,13 @@ type StoreContextValue = {
   leads: Lead[];
   isLoading: boolean;
   isSupabaseEnabled: boolean;
+  supabaseConfig: SupabaseConfig;
+  lastApiError: string | null;
   getLead: (id: string) => Lead | undefined;
   refreshLeads: () => Promise<void>;
+  reconnectSupabase: (url?: string, key?: string) => Promise<boolean>;
+  disconnectSupabase: () => void;
+  clearApiError: () => void;
   createLead: (input: LeadInput) => Promise<Lead | undefined>;
   updateLead: (id: string, input: LeadInput) => Promise<void>;
   updateStatus: (id: string, status: LeadStatus, reason?: string) => Promise<void>;
@@ -194,48 +205,102 @@ function leadPayload(input: LeadInput, timestamp = new Date().toISOString()) {
 }
 
 export function LeadStoreProvider({ children }: { children: React.ReactNode }) {
-  const supabase = React.useMemo(() => createClient(), []);
+  const [supabaseConfig, setSupabaseConfig] = React.useState<SupabaseConfig>(() => getSupabaseConfig());
+  const [supabase, setSupabase] = React.useState(() => createClient());
   const isSupabaseEnabled = Boolean(supabase);
   const [leads, setLeads] = React.useState<Lead[]>([]);
   const [isLoading, setIsLoading] = React.useState(true);
   const [isHydrated, setIsHydrated] = React.useState(false);
+  const [lastApiError, setLastApiError] = React.useState<string | null>(null);
 
-  const refreshLeads = React.useCallback(async () => {
-    if (!supabase) return;
-
-    setIsLoading(true);
-    const { data, error } = await supabase
-        .from("leads")
-        .select(
-            `
-          *,
-          payments (*),
-          lead_activities (*),
-          lead_notes (*)
-        `
-        )
-        .is("deleted_at", null)
-        .order("created_at", { ascending: false });
-
-    if (error) {
-      toast.error(error.message);
+  const refreshLeads = React.useCallback(async (clientOverride?: ReturnType<typeof createClient>) => {
+    const activeClient = clientOverride !== undefined ? clientOverride : supabase;
+    if (!activeClient) {
       setIsLoading(false);
       return;
     }
 
-    setLeads(((data ?? []) as LeadRow[]).map(mapLead));
-    setIsLoading(false);
+    setIsLoading(true);
+    setLastApiError(null);
+
+    try {
+      // 1. First attempt full nested select
+      const { data, error } = await activeClient
+        .from("leads")
+        .select(`
+          *,
+          payments (*),
+          lead_activities (*),
+          lead_notes (*)
+        `)
+        .is("deleted_at", null)
+        .order("created_at", { ascending: false });
+
+      if (error) {
+        console.warn("Nested select on leads failed, attempting flat select fallback:", error);
+
+        // 2. Fallback: If relations (foreign keys) are not yet configured or erroring, try basic select
+        const flatRes = await activeClient
+          .from("leads")
+          .select("*")
+          .is("deleted_at", null)
+          .order("created_at", { ascending: false });
+
+        if (flatRes.error) {
+          console.error("Supabase API flat query failed:", flatRes.error);
+          setLastApiError(flatRes.error.message);
+          toast.error(`Supabase API: ${flatRes.error.message}`);
+          setIsLoading(false);
+          return;
+        }
+
+        setLeads(((flatRes.data ?? []) as LeadRow[]).map(mapLead));
+        setLastApiError(null);
+        setIsLoading(false);
+        return;
+      }
+
+      setLeads(((data ?? []) as LeadRow[]).map(mapLead));
+      setLastApiError(null);
+      setIsLoading(false);
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      console.error("Unexpected Supabase error:", err);
+      setLastApiError(errMsg);
+      toast.error(`Supabase error: ${errMsg}`);
+      setIsLoading(false);
+    }
   }, [supabase]);
+
+  // Listen to configuration changes (e.g. user saved credentials in Settings)
+  React.useEffect(() => {
+    const handleConfigChange = () => {
+      const newConfig = getSupabaseConfig();
+      setSupabaseConfig(newConfig);
+      const newClient = createClient(true);
+      setSupabase(newClient);
+      if (newClient) {
+        void refreshLeads(newClient);
+      }
+    };
+
+    window.addEventListener("supabase-config-changed", handleConfigChange);
+    return () => window.removeEventListener("supabase-config-changed", handleConfigChange);
+  }, [refreshLeads]);
 
   React.useEffect(() => {
     if (supabase) {
-      void refreshLeads();
+      void refreshLeads(supabase);
       return;
     }
 
     const stored = window.localStorage.getItem(storageKey);
     if (stored) {
-      setLeads(JSON.parse(stored) as Lead[]);
+      try {
+        setLeads(JSON.parse(stored) as Lead[]);
+      } catch {
+        setLeads(initialLeads);
+      }
     } else {
       setLeads(initialLeads);
     }
@@ -248,6 +313,47 @@ export function LeadStoreProvider({ children }: { children: React.ReactNode }) {
       window.localStorage.setItem(storageKey, JSON.stringify(leads));
     }
   }, [isHydrated, leads, supabase]);
+
+  const reconnectSupabase = React.useCallback(async (url?: string, key?: string) => {
+    if (url && key) {
+      saveSupabaseConfig(url, key);
+    }
+    const newConfig = getSupabaseConfig();
+    setSupabaseConfig(newConfig);
+    const newClient = createClient(true);
+    setSupabase(newClient);
+    if (newClient) {
+      await refreshLeads(newClient);
+      toast.success("Connected to Supabase!");
+      return true;
+    }
+    toast.error("Could not initialize Supabase. Check URL and Key.");
+    return false;
+  }, [refreshLeads]);
+
+  const disconnectSupabase = React.useCallback(() => {
+    clearSupabaseConfig();
+    const newConfig = getSupabaseConfig();
+    setSupabaseConfig(newConfig);
+    setSupabase(null);
+    setLastApiError(null);
+
+    const stored = window.localStorage.getItem(storageKey);
+    if (stored) {
+      try {
+        setLeads(JSON.parse(stored) as Lead[]);
+      } catch {
+        setLeads(initialLeads);
+      }
+    } else {
+      setLeads(initialLeads);
+    }
+    toast.info("Switched to Local Demo Mode");
+  }, []);
+
+  const clearApiError = React.useCallback(() => {
+    setLastApiError(null);
+  }, []);
 
   const getLead = React.useCallback(
       (id: string) => leads.find((lead) => lead.id === id && !lead.deletedAt),
@@ -817,8 +923,13 @@ export function LeadStoreProvider({ children }: { children: React.ReactNode }) {
         leads,
         isLoading,
         isSupabaseEnabled,
+        supabaseConfig,
+        lastApiError,
         getLead,
         refreshLeads,
+        reconnectSupabase,
+        disconnectSupabase,
+        clearApiError,
         createLead,
         updateLead,
         updateStatus,
@@ -834,8 +945,13 @@ export function LeadStoreProvider({ children }: { children: React.ReactNode }) {
         leads,
         isLoading,
         isSupabaseEnabled,
+        supabaseConfig,
+        lastApiError,
         getLead,
         refreshLeads,
+        reconnectSupabase,
+        disconnectSupabase,
+        clearApiError,
         createLead,
         updateLead,
         updateStatus,
