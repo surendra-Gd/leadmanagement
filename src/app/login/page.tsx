@@ -40,6 +40,7 @@ export function LoginPage() {
     const supabase = createClient();
 
     if (!supabase) {
+      window.sessionStorage.removeItem("demo_logged_out");
       toast.success("Entering Demo Mode");
       navigate("/dashboard");
       return;

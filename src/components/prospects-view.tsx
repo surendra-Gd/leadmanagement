@@ -12,10 +12,10 @@ import { ProspectFormDialog } from "@/components/prospect-form-dialog";
 import { Link } from "react-router-dom";
 
 const TABS: { key: ProspectStatus | "all"; label: string }[] = [
-    { key: "all", label: "All" },
-    { key: "warm", label: "Warm Lead" },
     { key: "cold", label: "Cold Lead" },
-    { key: "not_interested", label: "Not Interested" }
+    { key: "warm", label: "Warm Lead" },
+    { key: "not_interested", label: "Not Interested" },
+    { key: "all", label: "All" }
 ];
 
 export function ProspectsView() {
@@ -29,7 +29,7 @@ export function ProspectsView() {
         softDeleteLead
     } = useLeadStore();
 
-    const [tab, setTab] = React.useState<ProspectStatus | "all">("all");
+    const [tab, setTab] = React.useState<ProspectStatus | "all">("cold");
     const [search, setSearch] = React.useState("");
     const [dialogOpen, setDialogOpen] = React.useState(false);
     const [editingProspect, setEditingProspect] = React.useState<Lead | undefined>();

@@ -44,7 +44,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   React.useEffect(() => {
     const supabase = createClient();
     if (!supabase) {
-      if (pathname !== "/login") {
+      const isLoggedOut = window.sessionStorage.getItem("demo_logged_out") === "true";
+      if (isLoggedOut && pathname !== "/login") {
         navigate("/login", { replace: true });
       }
       return;
@@ -138,6 +139,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     const supabase = createClient();
     if (supabase) {
       await supabase.auth.signOut();
+    } else {
+      window.sessionStorage.setItem("demo_logged_out", "true");
     }
     navigate("/login");
   }

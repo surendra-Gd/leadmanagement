@@ -14,13 +14,22 @@ import { Lead, LeadStatus } from "@/lib/types";
 
 const defaultFilters: LeadFiltersValue = {
   search: "",
-  status: "all",
+  status: "in_progress",
   sort: "newest",
   minAmount: "",
   maxAmount: "",
   startDate: "",
   endDate: ""
 };
+
+const LEAD_STATUS_TABS: { key: LeadStatus | "all"; label: string }[] = [
+  { key: "in_progress", label: "In Progress" },
+  { key: "confirmed", label: "Confirmed" },
+  { key: "not_confirmed", label: "Not Confirmed" },
+  { key: "completed", label: "Completed" },
+  { key: "cancelled", label: "Cancelled" },
+  { key: "all", label: "All Leads" }
+];
 
 export function LeadsView({
   title = "Leads",
@@ -35,7 +44,7 @@ export function LeadsView({
     useLeadStore();
   const [filters, setFilters] = React.useState<LeadFiltersValue>({
     ...defaultFilters,
-    status: fixedStatus ?? "all"
+    status: fixedStatus ?? "in_progress"
   });
   const [dialogOpen, setDialogOpen] = React.useState(false);
   const [editingLead, setEditingLead] = React.useState<Lead | undefined>();
@@ -45,12 +54,28 @@ export function LeadsView({
   React.useEffect(() => {
     if (fixedStatus) {
       setFilters((current) => ({ ...current, status: fixedStatus }));
+    } else {
+      setFilters((current) => ({ ...current, status: "in_progress" }));
     }
   }, [fixedStatus]);
 
   React.useEffect(() => {
     setPage(1);
   }, [filters, pageSize]);
+
+  const statusCounts = React.useMemo(() => {
+    const activeLeads = leads.filter(
+      (lead) => !lead.deletedAt && lead.recordType !== "prospect"
+    );
+    return {
+      all: activeLeads.length,
+      in_progress: activeLeads.filter((l) => l.status === "in_progress").length,
+      confirmed: activeLeads.filter((l) => l.status === "confirmed").length,
+      not_confirmed: activeLeads.filter((l) => l.status === "not_confirmed").length,
+      completed: activeLeads.filter((l) => l.status === "completed").length,
+      cancelled: activeLeads.filter((l) => l.status === "cancelled").length
+    };
+  }, [leads]);
 
   const filtered = React.useMemo(() => {
     const search = filters.search.trim().toLowerCase();
@@ -133,6 +158,24 @@ export function LeadsView({
       />
 
       <div className="space-y-4">
+        {!fixedStatus && (
+          <div className="flex flex-wrap items-center gap-2">
+            {LEAD_STATUS_TABS.map((tab) => (
+              <Button
+                key={tab.key}
+                size="sm"
+                variant={filters.status === tab.key ? "default" : "outline"}
+                onClick={() => setFilters((prev) => ({ ...prev, status: tab.key }))}
+              >
+                {tab.label}
+                <span className="ml-1.5 text-xs opacity-70">
+                  ({statusCounts[tab.key]})
+                </span>
+              </Button>
+            ))}
+          </div>
+        )}
+
         <LeadFilters
           value={filters}
           onChange={setFilters}
