@@ -2,6 +2,7 @@
 
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
+  AlertTriangle,
   BarChart3,
   CheckCircle2,
   LayoutDashboard,
@@ -16,13 +17,13 @@ import {
   XCircle
 } from "lucide-react";
 import * as React from "react";
-import { Toaster } from "sonner";
+import { toast, Toaster } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { LeadStoreProvider, useLeadStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
-import { createClient } from "@/lib/supabase/client";
+import { clearSupabaseConfig, createClient } from "@/lib/supabase";
 
 const navigation = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -53,32 +54,41 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
     let active = true;
 
-    supabase.auth.getSession().then(({ data }) => {
-      if (!active) return;
-      const isAuthRoute = pathname === "/login";
-      if (!data.session && !isAuthRoute) {
-        navigate("/login", { replace: true });
-      }
-      if (data.session && isAuthRoute) {
-        navigate("/dashboard", { replace: true });
-      }
-    });
+    supabase.auth
+      .getSession()
+      .then(({ data }) => {
+        if (!active) return;
+        const isAuthRoute = pathname === "/login";
+        if (!data?.session && !isAuthRoute) {
+          navigate("/login", { replace: true });
+        }
+        if (data?.session && isAuthRoute) {
+          navigate("/dashboard", { replace: true });
+        }
+      })
+      .catch((err) => {
+        console.warn("Supabase auth session check failed (unreachable):", err);
+      });
 
-    const {
-      data: { subscription }
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (!active) return;
-      if (!session && pathname !== "/login") {
-        navigate("/login", { replace: true });
-      }
-      if (session && pathname === "/login") {
-        navigate("/dashboard", { replace: true });
-      }
-    });
+    let subscription: { unsubscribe: () => void } | null = null;
+    try {
+      const res = supabase.auth.onAuthStateChange((_event, session) => {
+        if (!active) return;
+        if (!session && pathname !== "/login") {
+          navigate("/login", { replace: true });
+        }
+        if (session && pathname === "/login") {
+          navigate("/dashboard", { replace: true });
+        }
+      });
+      subscription = res.data.subscription;
+    } catch (err) {
+      console.warn("Supabase auth state listener error:", err);
+    }
 
     return () => {
       active = false;
-      subscription.unsubscribe();
+      subscription?.unsubscribe();
     };
   }, [pathname, navigate]);
 
@@ -249,6 +259,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </header>
 
           <main className="px-4 py-6 pb-24 sm:px-6 lg:px-8 lg:pb-8">
+            <SupabaseStatusBanner />
             {children}
           </main>
         </div>
@@ -320,6 +331,69 @@ function ConnectionCard() {
       >
         <span>{isSupabaseEnabled ? "View Connection & Diagnostics →" : "Connect Supabase API →"}</span>
       </Link>
+    </div>
+  );
+}
+
+function SupabaseStatusBanner() {
+  const { lastApiError, clearApiError } = useLeadStore();
+  const [dismissed, setDismissed] = React.useState(false);
+
+  React.useEffect(() => {
+    if (lastApiError) setDismissed(false);
+  }, [lastApiError]);
+
+  if (!lastApiError || dismissed) return null;
+
+  const isNetworkIssue =
+    lastApiError.toLowerCase().includes("failed to fetch") ||
+    lastApiError.toLowerCase().includes("network") ||
+    lastApiError.toLowerCase().includes("unreachable") ||
+    lastApiError.toLowerCase().includes("endpoint");
+
+  return (
+    <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3.5 text-xs text-amber-900 dark:text-amber-200">
+      <div className="flex items-start gap-2.5 sm:items-center">
+        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400 sm:mt-0" />
+        <div>
+          <span className="font-semibold">
+            {isNetworkIssue ? "Supabase Endpoint Unreachable" : "Supabase Notice"}
+          </span>
+          <p className="mt-0.5 opacity-90">
+            {isNetworkIssue
+              ? "Cannot connect to your Supabase database (project was removed, offline, or URL incorrect). The app is operating safely in offline mode with local data."
+              : lastApiError}
+          </p>
+        </div>
+      </div>
+      <div className="flex items-center gap-2">
+        <Link
+          to="/settings"
+          className="rounded-md bg-amber-600 px-2.5 py-1 text-xs font-medium text-white shadow-sm hover:bg-amber-700"
+        >
+          Configure Supabase
+        </Link>
+        <button
+          type="button"
+          onClick={() => {
+            clearSupabaseConfig();
+            clearApiError();
+            setDismissed(true);
+            toast.success("Switched to clean Demo Mode");
+          }}
+          className="rounded-md border border-amber-600/30 bg-background/80 px-2.5 py-1 text-xs font-medium text-foreground hover:bg-background"
+        >
+          Use Demo Mode
+        </button>
+        <button
+          type="button"
+          onClick={() => setDismissed(true)}
+          className="ml-1 p-1 text-muted-foreground hover:text-foreground"
+          aria-label="Dismiss banner"
+        >
+          ✕
+        </button>
+      </div>
     </div>
   );
 }

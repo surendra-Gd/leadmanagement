@@ -67,10 +67,17 @@ export function SettingsView() {
       return;
     }
 
-    supabase.auth.getUser().then(({ data }) => {
-      setUserEmail(data.user?.email ?? null);
-      setSessionChecked(true);
-    });
+    supabase.auth
+      .getUser()
+      .then(({ data }) => {
+        setUserEmail(data.user?.email ?? null);
+        setSessionChecked(true);
+      })
+      .catch((err) => {
+        console.warn("Supabase getUser failed (unreachable):", err);
+        setUserEmail(null);
+        setSessionChecked(true);
+      });
   }, [isSupabaseEnabled]);
 
   async function handleTestConnection() {
@@ -159,20 +166,37 @@ export function SettingsView() {
 
       {/* API Error Notification */}
       {lastApiError && (
-        <div className="mb-6 flex items-start justify-between gap-3 rounded-lg border border-destructive/40 bg-destructive/10 p-4 text-destructive">
+        <div className="mb-6 flex flex-wrap items-start justify-between gap-3 rounded-lg border border-destructive/40 bg-destructive/10 p-4 text-destructive">
           <div className="flex items-start gap-3">
             <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
             <div>
-              <p className="font-semibold text-sm">Supabase API Error Detected</p>
+              <p className="font-semibold text-sm">Supabase API Notice</p>
               <p className="mt-1 text-xs opacity-90">{lastApiError}</p>
               <p className="mt-2 text-xs opacity-80">
-                Check that your Supabase tables match the schema in <code className="font-mono bg-destructive/20 px-1 py-0.5 rounded">supabase/schema.sql</code> and that your RLS policies allow access.
+                If you recreated your Supabase project, run the SQL script in <code className="font-mono bg-destructive/20 px-1 py-0.5 rounded">supabase/schema.sql</code> in your Supabase SQL Editor and enter your new Project URL and Anon Key below.
               </p>
             </div>
           </div>
-          <Button variant="ghost" size="sm" onClick={clearApiError} className="h-7 text-xs">
-            Dismiss
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                disconnectSupabase();
+                setInputUrl("");
+                setInputKey("");
+                setTestResult(null);
+                clearApiError();
+                toast.success("Switched to clean Demo Mode");
+              }}
+              className="h-7 text-xs border-destructive/30 hover:bg-destructive/20 text-destructive"
+            >
+              Reset to Demo Mode
+            </Button>
+            <Button variant="ghost" size="sm" onClick={clearApiError} className="h-7 text-xs">
+              Dismiss
+            </Button>
+          </div>
         </div>
       )}
 

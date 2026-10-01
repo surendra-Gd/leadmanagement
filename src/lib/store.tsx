@@ -237,8 +237,6 @@ export function LeadStoreProvider({ children }: { children: React.ReactNode }) {
         .order("created_at", { ascending: false });
 
       if (error) {
-        console.warn("Nested select on leads failed, attempting flat select fallback:", error);
-
         // 2. Fallback: If relations (foreign keys) are not yet configured or erroring, try basic select
         const flatRes = await activeClient
           .from("leads")
@@ -247,9 +245,31 @@ export function LeadStoreProvider({ children }: { children: React.ReactNode }) {
           .order("created_at", { ascending: false });
 
         if (flatRes.error) {
-          console.error("Supabase API flat query failed:", flatRes.error);
-          setLastApiError(flatRes.error.message);
-          toast.error(`Supabase API: ${flatRes.error.message}`);
+          const isNetwork =
+            flatRes.error.message.includes("Failed to fetch") ||
+            flatRes.error.message.includes("NetworkError") ||
+            flatRes.error.message.includes("fetch");
+
+          const userFriendlyMsg = isNetwork
+            ? "Cannot reach Supabase endpoint (project might be deleted or offline)."
+            : flatRes.error.message;
+
+          console.warn("Supabase query fallback to local cache:", flatRes.error.message);
+          setLastApiError(userFriendlyMsg);
+
+          // Hydrate from localStorage / initial leads so user data is never empty or lost
+          const stored = window.localStorage.getItem(storageKey);
+          if (stored) {
+            try {
+              const parsed = JSON.parse(stored) as Lead[];
+              setLeads(parsed && parsed.length > 0 ? parsed : initialLeads);
+            } catch {
+              setLeads(initialLeads);
+            }
+          } else {
+            setLeads(initialLeads);
+          }
+          setIsHydrated(true);
           setIsLoading(false);
           return;
         }
@@ -265,9 +285,30 @@ export function LeadStoreProvider({ children }: { children: React.ReactNode }) {
       setIsLoading(false);
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : String(err);
-      console.error("Unexpected Supabase error:", err);
-      setLastApiError(errMsg);
-      toast.error(`Supabase error: ${errMsg}`);
+      console.warn("Supabase connection error (falling back to local cache):", errMsg);
+      const isNetwork =
+        errMsg.includes("Failed to fetch") ||
+        errMsg.includes("NetworkError") ||
+        errMsg.includes("fetch");
+
+      setLastApiError(
+        isNetwork
+          ? "Cannot reach Supabase endpoint (project might be deleted or offline)."
+          : errMsg
+      );
+
+      const stored = window.localStorage.getItem(storageKey);
+      if (stored) {
+        try {
+          const parsed = JSON.parse(stored) as Lead[];
+          setLeads(parsed && parsed.length > 0 ? parsed : initialLeads);
+        } catch {
+          setLeads(initialLeads);
+        }
+      } else {
+        setLeads(initialLeads);
+      }
+      setIsHydrated(true);
       setIsLoading(false);
     }
   }, [supabase]);
@@ -309,10 +350,10 @@ export function LeadStoreProvider({ children }: { children: React.ReactNode }) {
   }, [refreshLeads, supabase]);
 
   React.useEffect(() => {
-    if (!supabase && isHydrated) {
+    if ((!supabase || lastApiError) && isHydrated && leads.length > 0) {
       window.localStorage.setItem(storageKey, JSON.stringify(leads));
     }
-  }, [isHydrated, leads, supabase]);
+  }, [isHydrated, leads, supabase, lastApiError]);
 
   const reconnectSupabase = React.useCallback(async (url?: string, key?: string) => {
     if (url && key) {

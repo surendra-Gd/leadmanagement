@@ -143,9 +143,14 @@ export async function testSupabaseConnection(
       }
     });
 
-    // Check auth session
-    const { data: authData } = await testClient.auth.getSession();
-    const isAuthenticated = Boolean(authData?.session?.user);
+    // Check auth session safely
+    let isAuthenticated = false;
+    try {
+      const { data: authData } = await testClient.auth.getSession();
+      isAuthenticated = Boolean(authData?.session?.user);
+    } catch {
+      isAuthenticated = false;
+    }
 
     // Try a ping query to public.leads
     const { data, error } = await testClient.from("leads").select("id").limit(1);

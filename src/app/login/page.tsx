@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { createClient, getSupabaseConfig, saveSupabaseConfig } from "@/lib/supabase";
+import { createClient, getSupabaseConfig, saveSupabaseConfig, clearSupabaseConfig } from "@/lib/supabase";
 
 export function LoginPage() {
   const navigate = useNavigate();
@@ -27,11 +27,16 @@ export function LoginPage() {
     const supabase = createClient();
     if (!supabase) return;
 
-    supabase.auth.getSession().then(({ data }) => {
-      if (data.session) {
-        navigate("/dashboard", { replace: true });
-      }
-    });
+    supabase.auth
+      .getSession()
+      .then(({ data }) => {
+        if (data?.session) {
+          navigate("/dashboard", { replace: true });
+        }
+      })
+      .catch((err) => {
+        console.warn("Supabase auth session check failed on login:", err);
+      });
   }, [navigate, isSupabaseConfigured]);
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
@@ -46,19 +51,29 @@ export function LoginPage() {
       return;
     }
 
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password
-    });
-    setLoading(false);
+    try {
+      const { error } = await supabase.auth.signInWithPassword({
+        email,
+        password
+      });
+      setLoading(false);
 
-    if (error) {
-      toast.error(error.message);
-      return;
+      if (error) {
+        if (error.message.includes("Failed to fetch") || error.message.includes("fetch")) {
+          toast.error("Cannot reach Supabase endpoint. If your database was removed or recreated, update your credentials below or enter Demo Mode.");
+        } else {
+          toast.error(error.message);
+        }
+        return;
+      }
+
+      toast.success("Signed in successfully");
+      navigate("/dashboard");
+    } catch (err: unknown) {
+      setLoading(false);
+      const errMsg = err instanceof Error ? err.message : String(err);
+      toast.error(`Connection error: ${errMsg}. Update Supabase keys below or continue in Demo Mode.`);
     }
-
-    toast.success("Signed in successfully");
-    navigate("/dashboard");
   }
 
   function handleSaveInlineConfig(e: React.FormEvent) {
@@ -135,6 +150,21 @@ export function LoginPage() {
                   ? "Sign In with Supabase"
                   : "Enter Dashboard (Demo Mode)"}
             </Button>
+            {isSupabaseConfigured && (
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full text-xs"
+                onClick={() => {
+                  window.sessionStorage.removeItem("demo_logged_out");
+                  toast.success("Entering Demo Mode");
+                  navigate("/dashboard");
+                }}
+              >
+                <Sparkles className="h-3.5 w-3.5" />
+                Continue in Demo Mode (Offline Data)
+              </Button>
+            )}
           </form>
 
           {/* Quick config toggle for easy onboarding */}
@@ -176,9 +206,27 @@ export function LoginPage() {
                   required
                 />
               </div>
-              <Button type="submit" size="sm" className="w-full text-xs">
-                Save & Enable Live APIs
-              </Button>
+              <div className="flex items-center justify-between pt-1 gap-2">
+                <Button type="submit" size="sm" className="text-xs">
+                  Save & Enable
+                </Button>
+                {supabaseConfig.source === "custom" && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      clearSupabaseConfig();
+                      setSupabaseConfig(getSupabaseConfig());
+                      setInputUrl("");
+                      setInputKey("");
+                      setShowConfig(false);
+                      toast.success("Reset custom credentials");
+                    }}
+                    className="text-[11px] text-destructive hover:underline"
+                  >
+                    Clear custom keys
+                  </button>
+                )}
+              </div>
             </form>
           )}
         </CardContent>
